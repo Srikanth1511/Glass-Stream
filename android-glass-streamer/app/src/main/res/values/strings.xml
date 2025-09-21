@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GlassStream</string>
+    <string name="ready_url">Ready. Stream URL: %1$s</string>
+    <string name="streaming_on">Streaming on %1$s</string>
+    <string name="stopped">Stopped</string>
+    <string name="no_wifi_ready">Not streaming (no Wi-Fi IP)</string>
+    <string name="no_wifi_streaming">Streaming… (no Wi-Fi IP yet)</string>
 </resources>
+
+
