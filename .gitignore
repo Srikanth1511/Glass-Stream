@@ -1,0 +1,45 @@
+# --- OS noise ---
+.DS_Store
+Thumbs.db
+
+# --- IDEs ---
+.idea/
+*.iml
+.vscode/
+
+# --- Android / Gradle ---
+.gradle/
+**/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.lock
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Keep Gradle wrapper files!
+# (Do NOT ignore gradle/wrapper, gradlew, gradlew.bat)
+
+# --- Python ---
+pc-viewer/.venv/
+pc-viewer/venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.ipynb_checkpoints/
+pc-viewer/dist/
+pc-viewer/build/
+pc-viewer/.env
+pc-viewer/.env.*
+
+# --- Data / Models / Runs (big stuff) ---
+pc-viewer/data/
+pc-viewer/datasets/
+pc-viewer/checkpoints/
+pc-viewer/models/
+pc-viewer/runs/
+pc-viewer/outputs/
+pc-viewer/logs/
