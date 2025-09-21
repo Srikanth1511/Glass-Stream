@@ -1,0 +1,19 @@
+# Normalize text to LF in the repo
+*           text=auto eol=lf
+
+# Windows-native files keep CRLF
+*.bat       text eol=crlf
+
+# Explicit (helps IDEs & Android builds)
+*.java      text eol=lf
+*.kt        text eol=lf
+*.xml       text eol=lf
+*.gradle    text eol=lf
+*.pro       text eol=lf
+*.md        text eol=lf
+*.py        text eol=lf
+*.sh        text eol=lf
+
+# Gradle wrapper scripts
+gradlew     text eol=lf
+gradlew.bat text eol=crlf
