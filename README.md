@@ -3,8 +3,8 @@
 
 This bundle contains:
 - **android-glass-streamer/** — Android (KitKat/API 19) project to run on **Google Glass XE**.  
-  Opens the camera and serves MJPEG at `http://<GLASS_IP>:8080/stream.mjpeg`.  
-  **MainActivity** shows the actual Glass IP/URL on screen.
+  Opens the camera and serves MJPEG at `http://<GLASS_IP>:8080/stream.mjpeg`.
+- **MainActivity** shows the actual Glass IP/URL on screen.
 - **pc-viewer/** — Python OpenCV viewer that connects to the stream and shows live video.
 - **viewer_mediapipe.py** — Python + MediaPipe Hands viewer that overlays hand landmarks.
 
@@ -30,7 +30,7 @@ python viewer_mediapipe.py --url http://<GLASS_IP>:8080/stream.mjpeg --stride 2
 ### Start/Stop streaming
 #### 1) From Glass Interface
 * On Glass, launch **GlassStream**.
-#### 2) Using Cmd on windows to launch the app
+#### 2) Using cmd on windows from inside android platform tools folder to launch the app
 
  ```bash
 adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n com.srikanth.glassstream/.MainActivity
@@ -106,7 +106,8 @@ Use this to compare different preview sizes, JPEG quality, or stride settings.
 
 * The app uses the **legacy Camera API** + a simple **ServerSocket MJPEG server** (works on API 19).
 * Recommended preview size: **640x480** (change in `StreamService.java`).
-* Lower JPEG quality (40–55) = higher FPS.
+* Lower JPEG quality (40–50) = higher FPS. Current JPEG quality:60. This can be found in currentJpeg (), line
+`yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 60, baos);`
 * Glass and PC must be on the same Wi-Fi; allow port **8080** through firewall.
 
 ---
