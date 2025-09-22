@@ -49,6 +49,16 @@ public class MainActivity extends Activity {
         });
     }
 
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (isFinishing()) {
+            stopService(new Intent(MainActivity.this,
+                    com.srikanth.glassstream.svc.StreamService.class));
+        }
+    }
+
+
     private void updateInfoWithIp(boolean streaming) {
         String ip = getDeviceIpv4();
         if (ip == null || "0.0.0.0".equals(ip)) {

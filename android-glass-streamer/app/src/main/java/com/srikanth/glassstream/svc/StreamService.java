@@ -10,6 +10,9 @@ import android.hardware.Camera;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
+import android.content.Context;
+import android.net.wifi.WifiManager;
+import android.os.PowerManager;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,7 +31,8 @@ public class StreamService extends Service implements Camera.PreviewCallback {
     private byte[] lastFrameNV21;
     private static final int PORT = 8080;
     private static final int NOTIF_ID = 42;
-
+    private PowerManager.WakeLock cpuLock;
+    private WifiManager.WifiLock wifiLock;
     private Camera camera;
     private final Object frameLock = new Object();
     private volatile boolean running = false;
@@ -38,18 +42,49 @@ public class StreamService extends Service implements Camera.PreviewCallback {
 
     @Override public void onCreate() {
         super.onCreate();
+
+        Context app = getApplicationContext();
+
+        PowerManager pm = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
+        cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StreamService:cpu");
+        cpuLock.setReferenceCounted(false);
+        cpuLock.acquire();
+
+        WifiManager wm = (WifiManager) app.getSystemService(Context.WIFI_SERVICE);
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "StreamService:wifi");
+        wifiLock.setReferenceCounted(false);
+        wifiLock.acquire();
+
+
         startForegroundNotification();
         openCamera();
         startServer();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY;
+        return START_NOT_STICKY;
+    }
+
+    private void releaseLocks() {
+        try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); } catch (Exception ignored) {}
+        try { if (cpuLock  != null && cpuLock.isHeld())  cpuLock.release(); }  catch (Exception ignored) {}
+    }
+
+
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        stopServer();
+        closeCamera();
+        stopForeground(true);
+        releaseLocks();
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
         stopServer();
         closeCamera();
+        stopForeground(true);
+        releaseLocks();
         super.onDestroy();
     }
 
@@ -161,7 +196,7 @@ public class StreamService extends Service implements Camera.PreviewCallback {
         try {
             YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, previewW, previewH, null);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 70, baos);
+            yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 60, baos);
             return baos.toByteArray();
         } catch (Exception e) {
             Log.w(TAG, "JPEG encode failed", e);
@@ -225,7 +260,7 @@ public class StreamService extends Service implements Camera.PreviewCallback {
                     raw.write("\r\n".getBytes("US-ASCII"));
                     raw.flush();
 
-                    try { Thread.sleep(30); } catch (InterruptedException ignored) {}
+                    try { Thread.sleep(12); } catch (InterruptedException ignored) {}
                 }
 
             } catch (Exception e) {
