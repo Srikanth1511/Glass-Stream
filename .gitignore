@@ -33,6 +33,7 @@ pc-viewer/venv/
 pc-viewer/dist/
 pc-viewer/build/
 pc-viewer/.env
+pc-viewer/clips
 pc-viewer/.env.*
 
 # --- Data / Models / Runs (big stuff) ---
