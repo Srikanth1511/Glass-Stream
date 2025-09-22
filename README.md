@@ -28,12 +28,17 @@ python viewer_mediapipe.py --url http://<GLASS_IP>:8080/stream.mjpeg --stride 2
    ```
 
 ### Start/Stop streaming
-
+#### 1) From Glass Interface
 * On Glass, launch **GlassStream**.
+#### 2) Using Cmd on windows to launch the app
+
+ ```bash
+adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n com.srikanth.glassstream/.MainActivity
+```
+
 * Tap **Start Stream** → foreground service starts, streaming MJPEG.
   The IP/URL is shown on screen (auto-detected).
 * Tap **Stop Stream** → service stops.
-
 ---
 
 ## 2) View on PC (Python)
