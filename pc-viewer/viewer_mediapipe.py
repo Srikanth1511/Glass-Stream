@@ -59,7 +59,7 @@ def main():
     frames = 0
     fps = 0.0
 
-    cv2.namedWindow("Glass XE + MediaPipe Hands", cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow("Glass Camera + MediaPipe Hands", cv2.WINDOW_AUTOSIZE)
 
     for jpg in iter_jpeg_frames(args.url):
         img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
