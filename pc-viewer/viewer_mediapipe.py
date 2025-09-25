@@ -28,12 +28,15 @@ def iter_jpeg_frames(url, timeout=10):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", required=True)  # e.g. http://192.168.2.29:8080/stream.mjpeg
+    ap.add_argument("--url", required=True)  # e.g. http://<GLASS_IP>:8080/stream.mjpeg
     ap.add_argument("--max_hands", type=int, default=2)
     ap.add_argument("--min_det", type=float, default=0.5)
     ap.add_argument("--min_track", type=float, default=0.5)
     ap.add_argument("--stride", type=int, default=1, help="run MediaPipe every N frames")
     ap.add_argument("--flip", action="store_true")
+    ap.add_argument("--rotate", choices=["none", "cw", "ccw", "180", "auto"], default="none",
+                    help="Rotate frame: 90° cw/ccw, 180°, or auto portrait→landscape")
+
     ap.add_argument("--save", default="", help="CSV path to log landmarks")
     args = ap.parse_args()
 
@@ -56,6 +59,8 @@ def main():
     frames = 0
     fps = 0.0
 
+    cv2.namedWindow("Glass XE + MediaPipe Hands", cv2.WINDOW_AUTOSIZE)
+
     for jpg in iter_jpeg_frames(args.url):
         img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
@@ -63,6 +68,19 @@ def main():
 
         if args.flip:
             img = cv2.flip(img, 1)
+
+        # Rotate if requested
+        if args.rotate == "cw":
+            img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+        elif args.rotate == "ccw":
+            img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        elif args.rotate == "180":
+            img = cv2.rotate(img, cv2.ROTATE_180)
+        elif args.rotate == "auto":
+            # If portrait, rotate to landscape automatically
+            h, w = img.shape[:2]
+            if h > w:
+                img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
 
         frames += 1
         run = (frames % args.stride) == 0
@@ -89,9 +107,14 @@ def main():
             fps = frames / (now - last)
             last, frames = now, 0
 
+        # Debug: confirm what we're actually displaying
+        h, w = img.shape[:2]
+        # comment out this print if it's too chatty
+        # print(f"[frame] {w}x{h}  aspect={w/float(h):.3f}")
+
         cv2.putText(img, f"FPS~{fps:.1f} stride={args.stride}", (8, 24),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2, cv2.LINE_AA)
-        cv2.imshow("Glass XE + MediaPipe Hands", img)
+        cv2.imshow("Glass Camera + MediaPipe Hands", img)
         if cv2.waitKey(1) & 0xFF == 27:
             break
 

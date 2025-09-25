@@ -1,6 +1,6 @@
 import cv2, requests, numpy as np
 
-URL = "http://192.168.2.29:8080/stream.mjpeg"  # <-- change to your Glass IP
+URL = "http://<GLASS_IP>:8080/stream.mjpeg"  # <-- change to your Glass IP
 
 BOUNDARY = b"--frame"
 
@@ -26,7 +26,7 @@ def main():
         img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             continue
-        cv2.imshow("Glass XE Live", img)
+        cv2.imshow("Glass Camera Live", img)
         if cv2.waitKey(1) & 0xFF == 27:
             break
     cv2.destroyAllWindows()

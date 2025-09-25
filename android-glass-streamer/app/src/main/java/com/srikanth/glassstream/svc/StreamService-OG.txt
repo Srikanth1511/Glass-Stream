@@ -1,0 +1,275 @@
+package com.srikanth.glassstream.svc;
+
+import android.app.Service;
+import android.content.Intent;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
+import android.hardware.Camera;
+import android.os.Build;
+import android.os.IBinder;
+import android.util.Log;
+import android.content.Context;
+import android.net.wifi.WifiManager;
+import android.os.PowerManager;
+
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class StreamService extends Service implements Camera.PreviewCallback {
+    private static final String TAG = "StreamService";
+    private SurfaceTexture surfaceTexture;
+    private int frameCount = 0;
+    private int previewW = 504, previewH = 673;
+    private byte[] lastFrameNV21;
+    private static final int PORT = 8080;
+    private static final int NOTIF_ID = 42;
+    private PowerManager.WakeLock cpuLock;
+    private WifiManager.WifiLock wifiLock;
+    private Camera camera;
+    private final Object frameLock = new Object();
+    private volatile boolean running = false;
+
+    private ServerSocket serverSocket;
+    private ExecutorService pool;
+
+    @Override public void onCreate() {
+        super.onCreate();
+
+        Context app = getApplicationContext();
+
+        PowerManager pm = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
+        cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StreamService:cpu");
+        cpuLock.setReferenceCounted(false);
+        cpuLock.acquire();
+
+        WifiManager wm = (WifiManager) app.getSystemService(Context.WIFI_SERVICE);
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "StreamService:wifi");
+        wifiLock.setReferenceCounted(false);
+        wifiLock.acquire();
+
+
+        startForegroundNotification();
+        openCamera();
+        startServer();
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_NOT_STICKY;
+    }
+
+    private void releaseLocks() {
+        try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); } catch (Exception ignored) {}
+        try { if (cpuLock  != null && cpuLock.isHeld())  cpuLock.release(); }  catch (Exception ignored) {}
+    }
+
+
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        stopServer();
+        closeCamera();
+        stopForeground(true);
+        releaseLocks();
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override public void onDestroy() {
+        stopServer();
+        closeCamera();
+        stopForeground(true);
+        releaseLocks();
+        super.onDestroy();
+    }
+
+    @Override public IBinder onBind(Intent intent) { return null; }
+
+    private void startForegroundNotification() {
+        // No channels when compiling with API 19
+        android.app.Notification n = new android.app.Notification.Builder(this)
+                .setSmallIcon(android.R.drawable.presence_video_online)
+                .setContentTitle("Glass streaming")
+                .setContentText("Serving MJPEG on :8080/stream.mjpeg")
+                .build();
+
+        startForeground(NOTIF_ID, n);
+    }
+
+    private void openCamera() {
+        try {
+            camera = Camera.open(); // or Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
+            Camera.Parameters params = camera.getParameters();
+
+            // Choose size near 504x673
+            Camera.Size best = null;
+            for (Camera.Size s : params.getSupportedPreviewSizes()) {
+                if (best == null) best = s;
+                if (Math.abs(s.width - 504) + Math.abs(s.height - 673) <
+                        Math.abs(best.width - 504) + Math.abs(best.height - 673)) {
+                    best = s;
+                }
+            }
+            if (best != null) { previewW = best.width; previewH = best.height; }
+            params.setPreviewSize(previewW, previewH);
+            params.setPreviewFormat(ImageFormat.NV21);
+            camera.setParameters(params);
+
+            // Keep a strong reference to SurfaceTexture and set default size
+            surfaceTexture = new SurfaceTexture(0);
+            surfaceTexture.setDefaultBufferSize(previewW, previewH);
+            camera.setPreviewTexture(surfaceTexture);
+
+            // Use callback-with-buffer to ensure continuous delivery
+            int bitsPerPixel = ImageFormat.getBitsPerPixel(ImageFormat.NV21);
+            int bufSize = previewW * previewH * bitsPerPixel / 8;
+            for (int i = 0; i < 3; i++) {
+                camera.addCallbackBuffer(new byte[bufSize]);
+            }
+            camera.setPreviewCallbackWithBuffer(new Camera.PreviewCallback() {
+                @Override public void onPreviewFrame(byte[] data, Camera cam) {
+                    synchronized (frameLock) {
+                        if (lastFrameNV21 == null || lastFrameNV21.length != data.length) {
+                            lastFrameNV21 = new byte[data.length];
+                        }
+                        System.arraycopy(data, 0, lastFrameNV21, 0, data.length);
+                        frameCount++;
+                        if ((frameCount % 30) == 0) {
+                            Log.i("StreamService", "Captured frames: " + frameCount +
+                                    "  (" + previewW + "x" + previewH + ")");
+                        }
+                        frameLock.notifyAll();
+                    }
+                    // Re-queue the buffer to keep frames flowing
+                    if (cam != null) cam.addCallbackBuffer(data);
+                }
+            });
+
+            camera.startPreview();
+            Log.i("StreamService", "Camera preview started at " + previewW + "x" + previewH);
+        } catch (Exception e) {
+            Log.e(TAG, "openCamera failed", e);
+            stopSelf();
+        }
+    }
+
+    private void closeCamera() {
+        try {
+            if (camera != null) {
+                camera.setPreviewCallback(null);
+                camera.stopPreview();
+                camera.release();
+            }
+        } catch (Exception ignored) {}
+        camera = null;
+    }
+
+    @Override
+    public void onPreviewFrame(byte[] data, Camera cam) {
+        synchronized (frameLock) {
+            if (lastFrameNV21 == null || lastFrameNV21.length != data.length) {
+                lastFrameNV21 = new byte[data.length];
+            }
+            System.arraycopy(data, 0, lastFrameNV21, 0, data.length);
+
+            frameCount++;
+            if (frameCount % 30 == 0) {
+                Log.i("StreamService", "Captured " + frameCount + " frames");
+            }
+
+            frameLock.notifyAll();
+        }
+    }
+
+
+    private byte[] currentJpeg() {
+        byte[] nv21;
+        synchronized (frameLock) {
+            if (lastFrameNV21 == null) return null;
+            nv21 = lastFrameNV21;
+        }
+        try {
+            YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, previewW, previewH, null);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 60, baos);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            Log.w(TAG, "JPEG encode failed", e);
+            return null;
+        }
+    }
+
+    private void startServer() {
+        running = true;
+        pool = Executors.newCachedThreadPool();
+        pool.execute(new Runnable() {
+            @Override public void run() {
+                try {
+                    serverSocket = new ServerSocket(PORT);
+                    Log.i(TAG, "Server listening on " + PORT);
+                    while (running) {
+                        Socket s = serverSocket.accept();
+                        pool.execute(new ClientHandler(s));
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "Server error", e);
+                }
+            }
+        });
+    }
+
+    private void stopServer() {
+        running = false;
+        try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
+        if (pool != null) pool.shutdownNow();
+    }
+
+    private class ClientHandler implements Runnable {
+        private final Socket socket;
+        ClientHandler(Socket s) { socket = s; }
+
+        @Override public void run() {
+            try {
+                socket.setTcpNoDelay(true);
+                OutputStream raw = new BufferedOutputStream(socket.getOutputStream());
+
+                String headers =
+                        "HTTP/1.0 200 OK\r\n" +
+                                "Connection: keep-alive\r\n" +
+                                "Cache-Control: no-cache, private\r\n" +
+                                "Pragma: no-cache\r\n" +
+                                "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
+                raw.write(headers.getBytes("US-ASCII"));
+                raw.flush();
+
+                while (running && !socket.isClosed()) {
+                    byte[] jpg = currentJpeg();
+                    if (jpg == null) { try { Thread.sleep(5); } catch (InterruptedException ignored) {} continue; }
+
+                    String partHead =
+                            "--frame\r\n" +
+                                    "Content-Type: image/jpeg\r\n" +
+                                    "Content-Length: " + jpg.length + "\r\n\r\n";
+                    raw.write(partHead.getBytes("US-ASCII"));
+                    raw.write(jpg);
+                    raw.write("\r\n".getBytes("US-ASCII"));
+                    raw.flush();
+
+                    try { Thread.sleep(33); } catch (InterruptedException ignored) {}
+                }
+
+            } catch (Exception e) {
+                // client disconnects are expected; keep quiet
+            } finally {
+                try { socket.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+}
+
+

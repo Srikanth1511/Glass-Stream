@@ -1,18 +1,17 @@
 package com.srikanth.glassstream.svc;
 
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.graphics.YuvImage;
 import android.hardware.Camera;
-
-import android.os.IBinder;
-import android.util.Log;
-import android.content.Context;
 import android.net.wifi.WifiManager;
+import android.os.IBinder;
 import android.os.PowerManager;
+import android.util.Log;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -68,6 +67,13 @@ public class StreamService extends Service {
                     return new ByteArrayOutputStream(1 << 20);
                 }
             };
+
+    // ---------- Lifecycle ----------
+
+    private void releaseLocks() {
+        try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); } catch (Exception ignored) {}
+        try { if (cpuLock  != null && cpuLock.isHeld())  cpuLock.release(); }  catch (Exception ignored) {}
+    }
 
     // Choose exact or closest size by |Δw|+|Δh|, accepts either orientation
     private static Camera.Size pickExactOrClosest(Camera.Parameters p, int tw, int th) {
@@ -128,7 +134,8 @@ public class StreamService extends Service {
         startServer();
     }
 
-    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
             if (intent.hasExtra("preset")) {
                 int p = intent.getIntExtra("preset", preset);
@@ -145,10 +152,6 @@ public class StreamService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void releaseLocks() {
-        try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); } catch (Exception ignored) {}
-        try { if (cpuLock  != null && cpuLock.isHeld())  cpuLock.release(); }  catch (Exception ignored) {}
-    }
 
 
     @Override public void onTaskRemoved(Intent rootIntent) {
@@ -180,7 +183,10 @@ public class StreamService extends Service {
         startForeground(NOTIF_ID, n);
     }
 
+
+
     // ---------- Camera ----------
+
     private void openCamera() {
         try {
             camera = Camera.open(); // back camera by default
@@ -219,8 +225,7 @@ public class StreamService extends Service {
                     break;
                 case PRESET_VGA_43:
                 default:
-                    //Half the size of 1008x1346 but NV21 have odd number of pixel encoding issue and bigger fluctuations
-                    chosen = pickExactOrClosest(params, 504, 673);
+                    chosen = pickExactOrClosest(params, 640, 480);
                     break;
             }
 
@@ -235,6 +240,7 @@ public class StreamService extends Service {
             // Apply params
             params.setPreviewSize(previewW, previewH);
             params.setPreviewFormat(ImageFormat.NV21);
+            // params.setRecordingHint(true); // optional, test on/off
             camera.setParameters(params);
 
             // Read back what HAL accepted (source of truth)
@@ -251,8 +257,8 @@ public class StreamService extends Service {
 
             // Callback with buffers
             int bitsPerPixel = ImageFormat.getBitsPerPixel(ImageFormat.NV21);
-            final int bufSize = previewW * previewH * bitsPerPixel / 8;
-            for (int i = 0; i < 4; i++) camera.addCallbackBuffer(new byte[bufSize]);
+            final int bufSize = previewW * previewH * bitsPerPixel / 2;
+            for (int i = 0; i < 2; i++) camera.addCallbackBuffer(new byte[bufSize]);
 
             // Initialize write buffer once (safe if null)
             frameWrite = new byte[bufSize];
@@ -341,7 +347,7 @@ public class StreamService extends Service {
             ByteArrayOutputStream baos = jpgPool.get();
             baos.reset();
             // JPEG quality: 60 is a good balance; adjust to 55–65 to taste
-            yuv.compressToJpeg(new Rect(0, 0, w, h), 70, baos);
+            yuv.compressToJpeg(new Rect(0, 0, w, h), 60, baos);
             return baos.toByteArray();
         } catch (Exception e) {
             Log.w(TAG, "JPEG encode failed", e);

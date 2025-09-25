@@ -1,119 +1,111 @@
+# Google Glass XE / EE → PC MJPEG Stream & Viewer
 
-# Glass XE → PC Minimal MJPEG Stream (and Viewer)
-
-This bundle contains:
-- **android-glass-streamer/** — Android (KitKat/API 19) project to run on **Google Glass XE**.  
-  Opens the camera and serves MJPEG at `http://<GLASS_IP>:8080/stream.mjpeg`.
-- **MainActivity** shows the actual Glass IP/URL on screen.
-- **pc-viewer/** — Python OpenCV viewer that connects to the stream and shows live video.
-- **viewer_mediapipe.py** — Python + MediaPipe Hands viewer that overlays hand landmarks.
-
-Run with Glass IP arg in terminal:
-```bash
-python viewer_mediapipe.py --url http://<GLASS_IP>:8080/stream.mjpeg --stride 2
-````
+Stream the **camera feed from Google Glass** (Explorer or Enterprise Edition) over Wi-Fi to a PC viewer.
 
 ---
 
-## 1) Build & install on Glass (Android Studio)
+## Branches
 
-1. Open **Android Studio** → *Open an existing project* → select `android-glass-streamer`.
-2. Let it sync. (Keep `compileSdkVersion`/`targetSdkVersion` at **19**).
-3. Connect Glass over ADB (`adb devices` should show it).
-4. **Run** the `app` on Glass. (Or build + install manually):
+- **main** → for **Glass XE (Explorer Edition)**
+  - KitKat / API 19 project
+  - Orientation matches XE sensor (no rotation flags needed)
+  - Recommended preset: **640×480, JPEG quality 45–55** → smoother FPS
 
-   ```bash
-   gradlew assembleDebug
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
-   ```
+- **glass-ee** → for **Glass EE (Enterprise Edition)**
+  - Orientation requires **270° rotation**
+  - Default preset: **VGA 640×480 (4:3)** with **buffering ON** (4 buffers)
+  - Runtime flags (`adb am startservice`) control:
+    - `preset`, `buffering`, `quality`, `rotateDegrees`
+  - Typical EE performance: **~19–20 FPS** steady @ quality 50–60
+  - PC viewer adds `--rotate` arg to orient EE streams correctly
 
-### Start/Stop streaming
-#### 1) From Glass Interface
-* On Glass, launch **GlassStream**.
-#### 2) Using cmd on windows from inside android platform tools folder to launch the app
-
- ```bash
-adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n com.srikanth.glassstream/.MainActivity
-```
-
-* Tap **Start Stream** → foreground service starts, streaming MJPEG.
-  The IP/URL is shown on screen (auto-detected).
-* Tap **Stop Stream** → service stops.
 ---
 
-## 2) View on PC (Python)
+## PC Viewer
+
+Works for both XE and EE:
 
 ```bash
 cd pc-viewer
-python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# Linux/macOS
-source .venv/bin/activate
 
-pip install -r requirements.txt
+# XE (default orientation)
 python viewer.py --url http://<GLASS_IP>:8080/stream.mjpeg
-```
 
-* Press **ESC** to quit.
+# EE (rotate to match display)
+python viewer.py --url http://<GLASS_IP>:8080/stream.mjpeg --rotate cw
+```
 
 ---
 
-## 3) Quick sanity check in a browser
+## Build & Install on Glass
 
-On your PC:
-
-```
-http://<GLASS_IP>:8080/
-```
-
-You should see a simple page with `<img>` updating.
+1. Open **Android Studio** → *Open an existing project* → select `android-glass-streamer`.
+2. Let it sync (keep `compileSdkVersion` / `targetSdkVersion` = **19**).
+3. Connect Glass over ADB (`adb devices` should show it).
+4. Run `app` on Glass (or build + install manually).
 
 ---
 
-## 4) Find Glass IP
+## Starting & Stopping the Stream
 
-* On Glass: **Settings → Device Info → Status → IP address**
-* Or from PC:
+**On Glass:**
+- Launch **GlassStream** → tap **Start Stream**
+  - Foreground service starts, IP/URL auto-detected & shown on screen
+- Tap **Stop Stream** to stop
 
-  ```bash
-  adb shell ip addr show wlan0
-  ```
-
----
-
-## 5) Debugging FPS & Frames with adb logcat
-
-StreamService logs frame capture/encode counts every \~30–60 frames.
-On PC, run:
+**From PC (Windows cmd inside `platform-tools`):**
 
 ```bash
-adb logcat -s StreamService
+adb shell am start -W -a android.intent.action.MAIN     -c android.intent.category.LAUNCHER     -n com.srikanth.glassstream/.MainActivity
 ```
 
-Typical output:
+---
 
-```
-I/StreamService( 2827): Captured frames: 300 (640x480)
-I/StreamService( 2827): Encoded JPEGs: 600 (320x240)
-```
+## Sanity Checks
 
-Use this to compare different preview sizes, JPEG quality, or stride settings.
+- **Test stream link:** open in browser
+  ```
+  http://<GLASS_IP>:8080/
+  ```  
+  You should see a simple `<img>` refreshing.
+
+- **Find Glass IP:**
+  - On Glass: *Settings → Device Info → Status → IP address*
+  - Or via PC:
+    ```bash
+    adb shell ip addr show wlan0
+    ```  
+
+- **Check FPS via logcat:**
+  ```bash
+  adb logcat -s StreamService
+  ```  
+  Example output:
+  ```
+  I/StreamService(2827): Captured frames: 300 (640x480)
+  I/StreamService(2827): Encoded JPEGs: 600 (320x240)
+  ```  
+  Use to compare preview sizes, JPEG quality, stride, and EE presets.
 
 ---
 
 ## Notes
 
-* The app uses the **legacy Camera API** + a simple **ServerSocket MJPEG server** (works on API 19).
-* Recommended preview size: **640x480** (change in `StreamService.java`).
-* Lower JPEG quality (40–50) = higher FPS. Current JPEG quality:60. This can be found in currentJpeg (), line
-`yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 60, baos);`
-* Glass and PC must be on the same Wi-Fi; allow port **8080** through firewall.
+- Uses **legacy Camera API** + **ServerSocket MJPEG server** (API 19-compatible).
+- Recommended preview: **640×480** (set in `StreamService.java`).
+- Lower JPEG quality (40–50) = higher FPS.  
+  Current line in `currentJpeg()`:
+  ```java
+  yuv.compressToJpeg(new Rect(0, 0, previewW, previewH), 60, baos);
+  ```
+- Glass & PC must share same Wi-Fi; open port **8080** in firewall.
+- EE defaults: 640×480, ~19–20 FPS with buffering.
+  - For **1080p (1920×1080)**: switch to `preset 2` at line 44 in `StreamService.java` (EE branch).  
+    Performance: ~8–12 FPS, unstable.
 
 ---
 
-## Which IDE?
+## IDEs
 
-* **Android part** → use **Android Studio**
-* **Python viewers** → run from terminal; edit in VS Code, PyCharm, etc.
-
+- **Android code:** Android Studio
+- **Python viewer:** run from terminal; edit with VS Code, PyCharm, etc.  
